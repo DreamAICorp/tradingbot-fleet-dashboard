@@ -1,0 +1,41 @@
+{
+  "name": "tradingbot-fleet-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single-page Next.js dashboard for the realistic-sweep champion fleet — backtest vs simulation vs live drift detection",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "14.2.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "lightweight-charts": "5.1.0",
+    "recharts": "2.12.4",
+    "swr": "2.2.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.45.0",
+    "@testing-library/jest-dom": "6.4.6",
+    "@testing-library/react": "16.0.0",
+    "@types/node": "20.14.0",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "@vitejs/plugin-react": "4.3.1",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.3",
+    "jsdom": "24.1.0",
+    "typescript": "5.4.5",
+    "vitest": "1.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
