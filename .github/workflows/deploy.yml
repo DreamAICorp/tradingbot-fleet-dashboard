@@ -1,0 +1,134 @@
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'dev'
+        type: choice
+        options: ['dev', 'production']
+      port:
+        description: 'Port (Tailscale-only access)'
+        required: false
+        default: '3100'
+
+  # Auto-redeploy on every push to main once a successful manual run has happened.
+  push:
+    branches: [main]
+
+concurrency:
+  group: dashboard-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, sona-vps]
+    timeout-minutes: 12
+    env:
+      DASHBOARD_DIR: /opt/tradingbot-fleet-dashboard
+      MODE:    ${{ github.event.inputs.mode || 'dev' }}
+      PORT:    ${{ github.event.inputs.port || '3100' }}
+      # Backend on the same host — Next's rewrites in next.config.js use this.
+      NEXT_PUBLIC_API_URL: http://localhost:8010
+    steps:
+      - name: Mark target dir safe for actions-runner user
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$DASHBOARD_DIR"
+          sudo chown -R "$(id -un):$(id -gn)" "$DASHBOARD_DIR"
+          git config --global --add safe.directory "$DASHBOARD_DIR"
+
+      - name: Sync repo into target dir
+        run: |
+          set -euo pipefail
+          cd "$DASHBOARD_DIR"
+          if [ ! -d .git ]; then
+            git clone https://github.com/dream-ai-corp/tradingbot-fleet-dashboard.git .
+          fi
+          git fetch --depth=1 origin main
+          git reset --hard origin/main
+
+      - name: Install Node 20 (if missing)
+        run: |
+          set -euo pipefail
+          if ! command -v node >/dev/null 2>&1 || \
+             ! node -e "process.exit(parseInt(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)"; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+          node -v
+          npm -v
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          cd "$DASHBOARD_DIR"
+          npm ci --no-audit --no-fund
+
+      - name: Build (production only)
+        if: ${{ env.MODE == 'production' }}
+        run: |
+          set -euo pipefail
+          cd "$DASHBOARD_DIR"
+          npm run build
+
+      - name: Restart dashboard service
+        run: |
+          set -euo pipefail
+          UNIT_NAME=tradingbot-fleet-dashboard.service
+          # Idempotent: write systemd unit on every deploy so changes
+          # to MODE / PORT picks up.
+          sudo tee /etc/systemd/system/$UNIT_NAME >/dev/null <<EOF
+          [Unit]
+          Description=Tradingbot fleet dashboard (${MODE} on :${PORT})
+          After=network-online.target
+          Wants=network-online.target
+          StartLimitIntervalSec=120
+          StartLimitBurst=5
+
+          [Service]
+          Type=simple
+          User=$(id -un)
+          WorkingDirectory=${DASHBOARD_DIR}
+          Environment=NODE_ENV=$([ "${MODE}" = "production" ] && echo production || echo development)
+          Environment=NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+          Environment=PORT=${PORT}
+          ExecStart=/usr/bin/npm run $([ "${MODE}" = "production" ] && echo start || echo dev) -- -p ${PORT}
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now $UNIT_NAME
+          sudo systemctl reset-failed $UNIT_NAME || true
+          sudo systemctl restart $UNIT_NAME
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          # Wait up to 60s for the server to bind PORT.
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
+              echo "dashboard up at http://127.0.0.1:${PORT}/"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "dashboard failed to bind ${PORT}" >&2
+          sudo journalctl -u tradingbot-fleet-dashboard.service --no-pager -n 60
+          exit 1
+
+      - name: Job summary
+        run: |
+          {
+            echo "## Dashboard deployed"
+            echo ""
+            echo "- mode: \`${MODE}\`"
+            echo "- port: \`${PORT}\`"
+            echo "- repo head: \`$(cd ${DASHBOARD_DIR} && git rev-parse --short HEAD)\`"
+            echo "- access via Tailscale: \`http://sona-vps.taila762b3.ts.net:${PORT}/\`"
+            echo "- access via Caddy (if configured): \`https://fleet.taila762b3.ts.net/\`"
+          } >> "$GITHUB_STEP_SUMMARY"
