@@ -79,6 +79,110 @@ const logsNil = [
   { ts: Date.now() - 20_000, level: 'INFO',   message: '[NILUSDT] entry@1.347 size_usd=$2.1 lev=50' },
 ];
 
+const equityOverlayNil = {
+  champion_id: 'multi_tf_rsi_confluence_nilusdt_x50',
+  days: 30,
+  backtest_curve: [
+    { ts: Date.now() - 86_400_000 * 3, equity: 100 },
+    { ts: Date.now() - 86_400_000 * 2, equity: 102 },
+    { ts: Date.now() - 86_400_000,     equity: 104 },
+    { ts: Date.now(),                  equity: 106 },
+  ],
+  live_curve: [
+    { ts: Date.now() - 86_400_000 * 3, equity: 100 },
+    { ts: Date.now() - 86_400_000 * 2, equity: 100.8 },
+    { ts: Date.now() - 86_400_000,     equity: 100.4 },
+    { ts: Date.now(),                  equity: 99.5 },
+  ],
+};
+
+const brokerNil = {
+  champion_id: 'multi_tf_rsi_confluence_nilusdt_x50',
+  venue: 'paper',
+  symbol: 'NILUSDT',
+  side: 'long',
+  entry: 1.345,
+  mark: 1.347,
+  size: 21.0,
+  unrealized_pnl: 0.42,
+  liq_price: 1.318,
+  liq_distance_pct: 78,
+  fetched_at: Date.now() - 2_000,
+  available: true,
+};
+
+const liqHeatmap = {
+  ts: Date.now(),
+  positions: [
+    {
+      champion_id: 'multi_tf_rsi_confluence_nilusdt_x50',
+      symbol: 'NILUSDT', side: 'long', leverage: 50,
+      entry: 1.345, mark: 1.347, liq_price: 1.318,
+      liq_distance_pct: 78, unrealized_pnl_usd: 0.42,
+    },
+    {
+      champion_id: 'multi_tf_rsi_confluence_megausdt_x50',
+      symbol: 'MEGAUSDT', side: 'long', leverage: 50,
+      entry: 0.42, mark: 0.418, liq_price: 0.4116,
+      liq_distance_pct: 22, unrealized_pnl_usd: -2.10,
+    },
+  ],
+};
+
+const capAlloc = {
+  ts: Date.now(),
+  by_family: [{ key: 'multi_tf_rsi', pct: 87, equity_usd: 870 }, { key: 'ict', pct: 13, equity_usd: 130 }],
+  by_symbol: [{ key: 'NILUSDT', pct: 30, equity_usd: 300 }, { key: 'MEGAUSDT', pct: 70, equity_usd: 700 }],
+  by_leverage_tier: [{ key: 'x50', pct: 100, equity_usd: 1000 }],
+};
+
+const correlation = {
+  ts: Date.now(),
+  champions: [
+    'multi_tf_rsi_confluence_nilusdt_x50',
+    'multi_tf_rsi_confluence_megausdt_x50',
+  ],
+  cells: [
+    { a: 'multi_tf_rsi_confluence_nilusdt_x50',
+      b: 'multi_tf_rsi_confluence_megausdt_x50',
+      rho: 0.42, n_overlap: 600 },
+  ],
+};
+
+const runnerHealth = {
+  ts: Date.now(),
+  rows: [
+    {
+      champion_id: 'multi_tf_rsi_confluence_nilusdt_x50',
+      unit: 'tradingbot-paper-multi_tf_rsi_confluence_nilusdt_x50',
+      n_restarts: 0,
+      ws_reconnects_24h: 1,
+      last_tick_age_sec: 4,
+      active_since: Date.now() - 86_400_000 * 2,
+    },
+  ],
+};
+
+const edgeAttrNil = {
+  champion_id: 'multi_tf_rsi_confluence_nilusdt_x50',
+  days: 30,
+  curves: [
+    { ts: Date.now() - 86_400_000 * 2, strategy: 100, buy_and_hold: 100, do_nothing: 100 },
+    { ts: Date.now() - 86_400_000,     strategy: 102, buy_and_hold: 101, do_nothing: 100 },
+    { ts: Date.now(),                  strategy: 105, buy_and_hold: 103, do_nothing: 100 },
+  ],
+};
+
+const quietHoursNil = {
+  champion_id: 'multi_tf_rsi_confluence_nilusdt_x50',
+  expected_per_hour: 0.33,
+  cells: Array.from({ length: 24 }, (_, h) => ({
+    hour_utc: h,
+    n_trades: h === 14 ? 8 : h % 3 === 0 ? 1 : 0,
+    pnl_usd:  h === 14 ? 4.2 : 0,
+  })),
+};
+
 test.describe('Fleet dashboard', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/fleet/overview', (r) =>
@@ -89,6 +193,22 @@ test.describe('Fleet dashboard', () => {
       r.fulfill({ json: compareNil }));
     await page.route(/\/api\/fleet\/champions\/.*\/logs.*/, (r) =>
       r.fulfill({ json: logsNil }));
+    await page.route(/\/api\/fleet\/champions\/.*\/equity-overlay.*/, (r) =>
+      r.fulfill({ json: equityOverlayNil }));
+    await page.route(/\/api\/fleet\/champions\/.*\/broker-position.*/, (r) =>
+      r.fulfill({ json: brokerNil }));
+    await page.route(/\/api\/fleet\/champions\/.*\/edge-attribution.*/, (r) =>
+      r.fulfill({ json: edgeAttrNil }));
+    await page.route(/\/api\/fleet\/champions\/.*\/quiet-hours.*/, (r) =>
+      r.fulfill({ json: quietHoursNil }));
+    await page.route('**/api/fleet/liq-heatmap', (r) =>
+      r.fulfill({ json: liqHeatmap }));
+    await page.route('**/api/fleet/capital-allocation', (r) =>
+      r.fulfill({ json: capAlloc }));
+    await page.route('**/api/fleet/correlation', (r) =>
+      r.fulfill({ json: correlation }));
+    await page.route('**/api/fleet/runner-health', (r) =>
+      r.fulfill({ json: runnerHealth }));
   });
 
   test('zone 1 + zone 2 render with all 6 windows and 2 champion rows', async ({ page }) => {
@@ -123,13 +243,43 @@ test.describe('Fleet dashboard', () => {
     await expect(row).toContainText('6.40×');
   });
 
-  test('Phase B placeholders shown for chart + broker tabs', async ({ page }) => {
+  test('chart tab renders BacktestLiveChart with both legend lines', async ({ page }) => {
     await page.goto('/');
     await page.getByTestId('champion-row-multi_tf_rsi_confluence_nilusdt_x50').click();
     const exp = page.getByTestId('champion-expansion-multi_tf_rsi_confluence_nilusdt_x50');
     await exp.getByTestId('tab-chart').click();
-    await expect(exp.getByText(/Coming in Phase B/)).toBeVisible();
+    await expect(exp.getByTestId('backtest-live-chart-multi_tf_rsi_confluence_nilusdt_x50')).toBeVisible();
+    await expect(exp.getByText('Backtest', { exact: true })).toBeVisible();
+    await expect(exp.getByText('Live', { exact: true })).toBeVisible();
+  });
+
+  test('broker tab shows live position with side + liq distance', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('champion-row-multi_tf_rsi_confluence_nilusdt_x50').click();
+    const exp = page.getByTestId('champion-expansion-multi_tf_rsi_confluence_nilusdt_x50');
     await exp.getByTestId('tab-broker').click();
-    await expect(exp.getByText(/Coming in Phase B/)).toBeVisible();
+    await expect(exp.getByTestId('broker-position-multi_tf_rsi_confluence_nilusdt_x50')).toBeVisible();
+    await expect(exp.getByText('LONG')).toBeVisible();
+    await expect(exp.getByText('78.0%')).toBeVisible();
+  });
+
+  test('edge attribution + hourly tabs render', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('champion-row-multi_tf_rsi_confluence_nilusdt_x50').click();
+    const exp = page.getByTestId('champion-expansion-multi_tf_rsi_confluence_nilusdt_x50');
+    await exp.getByTestId('tab-edge').click();
+    await expect(exp.getByTestId('edge-attribution-multi_tf_rsi_confluence_nilusdt_x50')).toBeVisible();
+    await exp.getByTestId('tab-hours').click();
+    await expect(exp.getByTestId('quiet-hours')).toBeVisible();
+    await expect(exp.getByTestId('hour-14')).toContainText('8'); // peak hour
+  });
+
+  test('Phase C panels appear under the table', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByTestId('liq-heatmap')).toBeVisible();
+    await expect(page.getByTestId('capital-allocation')).toBeVisible();
+    await expect(page.getByTestId('runner-health')).toBeVisible();
+    await expect(page.getByTestId('correlation-matrix')).toBeVisible();
+    await expect(page.getByTestId('liq-cell-multi_tf_rsi_confluence_megausdt_x50')).toBeVisible();
   });
 });
