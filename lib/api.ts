@@ -70,6 +70,44 @@ export interface LogLine {
   message: string;
 }
 
+export interface EquityCurvePoint {
+  ts: number;
+  equity: number;
+}
+
+export interface TradeMarker {
+  ts: number;
+  price: number;
+  side: 'long' | 'short';
+  source: 'backtest' | 'live';
+  pnl?: number;
+}
+
+export interface EquityOverlay {
+  champion_id: string;
+  days: number;
+  backtest_curve: EquityCurvePoint[];
+  live_curve: EquityCurvePoint[];
+  backtest_markers?: TradeMarker[];
+  live_markers?: TradeMarker[];
+  note?: string;
+}
+
+export interface BrokerPosition {
+  champion_id: string;
+  venue: 'weex' | 'blofin' | 'paper';
+  symbol: string;
+  side: 'long' | 'short' | null;
+  entry: number | null;
+  mark: number | null;
+  size: number | null;
+  unrealized_pnl: number | null;
+  liq_price: number | null;
+  liq_distance_pct: number | null;
+  fetched_at: number;
+  available: boolean;     // false when broker client unavailable (Phase A)
+}
+
 class ApiError extends Error {
   constructor(public status: number, public body: string) {
     super(`HTTP ${status}: ${body.slice(0, 200)}`);
@@ -84,6 +122,90 @@ async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(res.status, body);
   }
   return (await res.json()) as T;
+}
+
+/* Phase C — fleet-level analytics */
+
+export interface OpenPositionRow {
+  champion_id: string;
+  symbol: string;
+  side: 'long' | 'short';
+  leverage: number;
+  entry: number;
+  mark: number;
+  liq_price: number;
+  liq_distance_pct: number;   // 100 = at entry, 0 = at liq line
+  unrealized_pnl_usd: number;
+}
+
+export interface LiqHeatmapPayload {
+  ts: number;
+  positions: OpenPositionRow[];
+}
+
+export interface AllocationSlice {
+  key: string;            // family or symbol or leverage tier
+  pct: number;
+  equity_usd: number;
+}
+
+export interface CapitalAllocationPayload {
+  ts: number;
+  by_family: AllocationSlice[];
+  by_symbol: AllocationSlice[];
+  by_leverage_tier: AllocationSlice[];
+}
+
+export interface QuietHoursCell {
+  hour_utc: number;        // 0..23
+  n_trades: number;
+  pnl_usd: number;
+}
+
+export interface QuietHoursPayload {
+  champion_id: string;
+  cells: QuietHoursCell[];   // exactly 24 entries
+  expected_per_hour: number; // contract / 24
+}
+
+export interface CorrelationCell {
+  a: string;   // champion_id
+  b: string;
+  rho: number; // -1..1
+  n_overlap: number; // bars overlap
+}
+
+export interface CorrelationPayload {
+  ts: number;
+  champions: string[];
+  cells: CorrelationCell[];
+}
+
+export interface RunnerHealthRow {
+  champion_id: string;
+  unit: string;
+  n_restarts: number;
+  ws_reconnects_24h: number;
+  last_tick_age_sec: number | null;
+  active_since: number | null;
+}
+
+export interface RunnerHealthPayload {
+  ts: number;
+  rows: RunnerHealthRow[];
+}
+
+export interface EdgeAttributionPoint {
+  ts: number;
+  strategy: number;        // strategy equity at this point
+  buy_and_hold: number;    // BTC/ETH/symbol naive long
+  do_nothing: number;      // 100 forever
+}
+
+export interface EdgeAttributionPayload {
+  champion_id: string;
+  days: number;
+  curves: EdgeAttributionPoint[];
 }
 
 export const fleetApi = {
@@ -102,6 +224,28 @@ export const fleetApi = {
   logs: (id: string, lines = 200, level: LogLine['level'] = 'INFO') =>
     getJson<LogLine[]>(
       `/api/fleet/champions/${encodeURIComponent(id)}/logs?lines=${lines}&level=${level}`,
+    ),
+
+  equityOverlay: (id: string, days = 30) =>
+    getJson<EquityOverlay>(
+      `/api/fleet/champions/${encodeURIComponent(id)}/equity-overlay?days=${days}`,
+    ),
+
+  brokerPosition: (id: string) =>
+    getJson<BrokerPosition>(
+      `/api/fleet/champions/${encodeURIComponent(id)}/broker-position`,
+    ),
+
+  // Phase C
+  liqHeatmap:    () => getJson<LiqHeatmapPayload>('/api/fleet/liq-heatmap'),
+  capitalAlloc:  () => getJson<CapitalAllocationPayload>('/api/fleet/capital-allocation'),
+  correlation:   () => getJson<CorrelationPayload>('/api/fleet/correlation'),
+  runnerHealth:  () => getJson<RunnerHealthPayload>('/api/fleet/runner-health'),
+  quietHours:    (id: string) =>
+    getJson<QuietHoursPayload>(`/api/fleet/champions/${encodeURIComponent(id)}/quiet-hours`),
+  edgeAttribution: (id: string, days = 30) =>
+    getJson<EdgeAttributionPayload>(
+      `/api/fleet/champions/${encodeURIComponent(id)}/edge-attribution?days=${days}`,
     ),
 };
 

@@ -9,8 +9,12 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { fleetApi, DriftCompare, LogLine } from '@/lib/api';
 import DriftStatRow from './DriftStatRow';
+import BacktestLiveChart from './BacktestLiveChart';
+import BrokerPositionPanel from './BrokerPositionPanel';
+import EdgeAttributionChart from './EdgeAttributionChart';
+import QuietHoursHeatmap from './QuietHoursHeatmap';
 
-type Tab = 'compare' | 'chart' | 'broker' | 'decisions';
+type Tab = 'compare' | 'chart' | 'broker' | 'decisions' | 'edge' | 'hours';
 
 interface Props {
   championId: string;
@@ -30,13 +34,15 @@ export default function ChampionExpansion({ championId }: Props) {
         padding: 12,
       }}
     >
-      <nav style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <nav style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {(
           [
             ['compare',   'Drift compare'],
-            ['chart',     'Backtest vs live (Phase B)'],
-            ['broker',    'Broker position (Phase B)'],
+            ['chart',     'Backtest vs live'],
+            ['broker',    'Broker position'],
             ['decisions', 'Decisions + logs'],
+            ['edge',      'Edge attribution'],
+            ['hours',     'Hourly fire pattern'],
           ] as [Tab, string][]
         ).map(([key, label]) => (
           <button
@@ -54,9 +60,11 @@ export default function ChampionExpansion({ championId }: Props) {
       </nav>
 
       {tab === 'compare'   && <CompareTab id={championId} />}
-      {tab === 'chart'     && <PhaseBPlaceholder label="Backtest vs live overlay" />}
-      {tab === 'broker'    && <PhaseBPlaceholder label="Live broker position (Weex / BloFin)" />}
+      {tab === 'chart'     && <BacktestLiveChart championId={championId} />}
+      {tab === 'broker'    && <BrokerPositionPanel championId={championId} />}
       {tab === 'decisions' && <DecisionsLogsTab id={championId} />}
+      {tab === 'edge'      && <EdgeAttributionChart championId={championId} />}
+      {tab === 'hours'     && <QuietHoursHeatmap championId={championId} />}
     </div>
   );
 }
@@ -148,20 +156,3 @@ function DecisionsLogsTab({ id }: { id: string }) {
   );
 }
 
-function PhaseBPlaceholder({ label }: { label: string }) {
-  return (
-    <div
-      style={{
-        padding: 24,
-        textAlign: 'center',
-        color: 'var(--color-text-dim)',
-        background: 'var(--color-bg)',
-        border: '1px dashed var(--color-border)',
-        borderRadius: 'var(--radius-sm)',
-      }}
-    >
-      <div style={{ fontSize: 14, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 12 }}>Coming in Phase B (1-2 weeks).</div>
-    </div>
-  );
-}
