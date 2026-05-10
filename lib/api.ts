@@ -70,6 +70,34 @@ export interface LogLine {
   message: string;
 }
 
+export interface Candle {
+  ts: number;       // ms
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ChartSignal {
+  ts: number;
+  side: 'long' | 'short';
+  type: 'entry' | 'exit';
+  price: number;
+  pnl?: number;
+  exit_reason?: string;
+}
+
+export interface ChartData {
+  champion_id: string;
+  symbol: string;
+  interval_minutes: number;
+  days: number;
+  candles: Candle[];
+  live_signals: ChartSignal[];
+  backtest_signals: ChartSignal[];
+}
+
 export interface EquityCurvePoint {
   ts: number;
   equity: number;
@@ -229,6 +257,11 @@ export const fleetApi = {
   equityOverlay: (id: string, days = 30) =>
     getJson<EquityOverlay>(
       `/api/fleet/champions/${encodeURIComponent(id)}/equity-overlay?days=${days}`,
+    ),
+
+  chartData: (id: string, days = 7, interval_minutes = 15) =>
+    getJson<ChartData>(
+      `/api/fleet/champions/${encodeURIComponent(id)}/chart-data?days=${days}&interval_minutes=${interval_minutes}`,
     ),
 
   brokerPosition: (id: string) =>
