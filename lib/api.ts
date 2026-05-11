@@ -253,7 +253,10 @@ export interface EdgeAttributionPayload {
 export const fleetApi = {
   overview: () => getJson<FleetOverview>('/api/fleet/overview'),
 
-  champions: () => getJson<ChampionRow[]>('/api/fleet/champions'),
+  champions: (includeVariants = false) =>
+    getJson<ChampionRow[]>(
+      `/api/fleet/champions${includeVariants ? '?include_variants=true' : ''}`,
+    ),
 
   compare: (id: string) =>
     getJson<DriftCompare>(`/api/fleet/champions/${encodeURIComponent(id)}/compare`),
