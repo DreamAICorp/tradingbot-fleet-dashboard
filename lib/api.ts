@@ -91,8 +91,13 @@ export interface Candle {
 
 export interface ChartSignal {
   ts: number;
-  side: 'long' | 'short';
-  type: 'entry' | 'exit';
+  /** side is null for rejected setups when the runner didn't record it
+   *  (older paper_signal_checks rows pre-rejected_side column). */
+  side: 'long' | 'short' | null;
+  /** 'rejected' = strategy generated a setup the runner refused to act
+   *  on (regime gate / stale / dedup / position open). Renders as a red
+   *  ✕ on the Live panel. */
+  type: 'entry' | 'exit' | 'rejected';
   price: number;
   pnl?: number;
   exit_reason?: string;
@@ -110,6 +115,11 @@ export interface ChartData {
   backtest_signals: ChartSignal[];
   /** S1 — entry+exit markers from the _nofilter sibling; null when no pair. */
   shadow_signals: ChartSignal[] | null;
+  /** S1 follow-up — setups the canonical runner SAW but REFUSED to act
+   *  on (regime filter / stale / dedup / position open). Rendered as
+   *  red ✕ on the Live panel so the operator visually identifies where
+   *  the filter mord. Always present; empty array when no rejects. */
+  rejected_signals: ChartSignal[];
 }
 
 export interface EquityCurvePoint {

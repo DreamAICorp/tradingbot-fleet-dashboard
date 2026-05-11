@@ -18,6 +18,7 @@ import {
   BACKTEST_MARKER_COLOR,
   LIVE_MARKER_COLOR,
   SHADOW_MARKER_COLOR,
+  REJECTED_MARKER_COLOR,
 } from '@/components/fleet/BacktestLiveChart';
 import type { ChartSignal } from '@/lib/api';
 
@@ -117,10 +118,61 @@ describe('marker palette — 3-color scheme', () => {
 
   it('palette uses spec-locked hex values (regression guard)', () => {
     // The hex values are the contract with the operator's mental model
-    // ("cyan / green / orange") — locking them down so a casual
+    // ("cyan / green / orange / red") — locking them down so a casual
     // refactor can't silently break the visual semantics.
     expect(BACKTEST_MARKER_COLOR).toBe('#79c0ff');
     expect(LIVE_MARKER_COLOR).toBe('#3fb950');
     expect(SHADOW_MARKER_COLOR).toBe('#f39f3a');
+    expect(REJECTED_MARKER_COLOR).toBe('#f85149');
+  });
+});
+
+describe('rejected markers — Sprint S1 follow-up', () => {
+  const rej = (s: 'long' | 'short' | null, reason = 'regime_not_allowed:choppy'): ChartSignal => ({
+    ts: 1_700_000_000_000,
+    side: s,
+    type: 'rejected',
+    price: 1.0,
+    exit_reason: reason,
+  });
+
+  it('uses circle shape + aboveBar position regardless of side', () => {
+    const m = signalToMarker(rej('long'), REJECTED_MARKER_COLOR);
+    expect(m.shape).toBe('circle');
+    expect(m.position).toBe('aboveBar');
+    expect(m.color).toBe('#f85149');
+  });
+
+  it('renders L✕ when side is long', () => {
+    expect(signalToMarker(rej('long'), REJECTED_MARKER_COLOR).text).toBe('L✕');
+  });
+
+  it('renders S✕ when side is short', () => {
+    expect(signalToMarker(rej('short'), REJECTED_MARKER_COLOR).text).toBe('S✕');
+  });
+
+  it('renders plain ✕ when side is null (pre-fix DB rows)', () => {
+    expect(signalToMarker(rej(null), REJECTED_MARKER_COLOR).text).toBe('✕');
+  });
+
+  it('paired mode (3 sources) + rejected = 4 distinct marker colors', () => {
+    const all = [
+      signalToMarker(
+        { ts: 1, side: 'long', type: 'entry', price: 1 },
+        BACKTEST_MARKER_COLOR,
+      ),
+      signalToMarker(
+        { ts: 2, side: 'long', type: 'entry', price: 1 },
+        LIVE_MARKER_COLOR,
+      ),
+      signalToMarker(
+        { ts: 3, side: 'long', type: 'entry', price: 1 },
+        SHADOW_MARKER_COLOR,
+      ),
+      signalToMarker(rej('long'), REJECTED_MARKER_COLOR),
+    ];
+    const colors = new Set(all.map((m) => m.color));
+    expect(colors.size).toBe(4);
+    expect(colors).toContain(REJECTED_MARKER_COLOR);
   });
 });
