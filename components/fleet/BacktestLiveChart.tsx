@@ -9,6 +9,15 @@
  * Visual divergence is the killer feature — when the backtest fired 8 entries
  * in a window and live fired 30, the marker count tells the story before
  * any number does.
+ *
+ * Sprint S1: when chart-data carries `shadow_signals` (the _nofilter sibling
+ * runner's paper_trades), they're overlaid on the Live panel as orange
+ * markers. So the operator sees, on the same candles:
+ *   cyan markers   = backtest entries
+ *   green markers  = live trades that passed the regime filter
+ *   orange markers = shadow trades the filter rejected (sibling took them)
+ * Zones with green+orange superposed = filter agreed. Zones with only
+ * orange = filter rejected an opportunity. Visual divergence is instant.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -52,7 +61,12 @@ export default function BacktestLiveChart({ championId }: Props) {
     <div data-testid={`backtest-live-chart-${championId}`}>
       <div style={controlBar}>
         <span style={{ color: 'var(--color-text-dim)', fontSize: 12 }}>
-          {data?.symbol} · {data?.candles?.length ?? 0} bars · live signals: {data?.live_signals?.length ?? 0} · backtest signals: {data?.backtest_signals?.length ?? 0}
+          {data?.symbol} · {data?.candles?.length ?? 0} bars
+          · live signals: {data?.live_signals?.length ?? 0}
+          · backtest signals: {data?.backtest_signals?.length ?? 0}
+          {data?.shadow_signals && (
+            <> · shadow signals: {data.shadow_signals.length}</>
+          )}
         </span>
         <div style={{ display: 'flex', gap: 6 }}>
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}
@@ -83,14 +97,22 @@ export default function BacktestLiveChart({ championId }: Props) {
             label="signals replayed by realistic_backtest engine"
             candles={data.candles}
             signals={data.backtest_signals}
-            color="#79c0ff"
+            markerColor={BACKTEST_MARKER_COLOR}
+            color={BACKTEST_MARKER_COLOR}
           />
           <ChartPanel
             title="Live"
-            label="signals from paper_trades"
+            label={
+              data.shadow_signals
+                ? `green = filter-on · orange = filter-off shadow (${data.pair_variant_id})`
+                : 'signals from paper_trades'
+            }
             candles={data.candles}
             signals={data.live_signals}
-            color="#3fb950"
+            markerColor={LIVE_MARKER_COLOR}
+            shadowSignals={data.shadow_signals ?? undefined}
+            shadowMarkerColor={SHADOW_MARKER_COLOR}
+            color={LIVE_MARKER_COLOR}
           />
         </>
       )}
@@ -98,15 +120,60 @@ export default function BacktestLiveChart({ championId }: Props) {
   );
 }
 
+// Marker palette — 3-color scheme so the operator visually attributes each
+// triangle to its source. Backtest = cyan, Live (filter on) = green,
+// Shadow (no filter) = orange. Picked from the GitHub-dark palette the
+// rest of the dashboard already uses (see styles/globals.css). Exported so
+// the unit test can assert paint paths without re-declaring the palette.
+export const BACKTEST_MARKER_COLOR = '#79c0ff';   // cyan
+export const LIVE_MARKER_COLOR     = '#3fb950';   // green
+export const SHADOW_MARKER_COLOR   = '#f39f3a';   // orange
+
 interface PanelProps {
   title: string;
   label: string;
   candles: ChartData['candles'];
   signals: ChartSignal[];
+  /** Marker color for the primary signal track. Drives the cyan/green/orange
+   *  attribution the operator scans for at a glance. */
+  markerColor: string;
   color: string;
+  /** Sprint S1 — when set, a secondary signal track is overlaid on the
+   *  same chart with its own color (orange for the no-filter shadow). */
+  shadowSignals?: ChartSignal[];
+  shadowMarkerColor?: string;
 }
 
-function ChartPanel({ title, label, candles, signals, color }: PanelProps) {
+export function signalToMarker(
+  s: ChartSignal,
+  color: string,
+): SeriesMarker<UTCTimestamp> {
+  const buy = (s.side === 'long' && s.type === 'entry')
+            || (s.side === 'short' && s.type === 'exit');
+  return {
+    time: Math.floor(s.ts / 1000) as UTCTimestamp,
+    position: buy ? 'belowBar' : 'aboveBar',
+    color,
+    shape: buy ? 'arrowUp' : 'arrowDown',
+    text:
+      s.type === 'entry'
+        ? (s.side === 'long' ? 'L' : 'S')
+        : (s.pnl !== undefined
+            ? (s.pnl >= 0 ? `+$${s.pnl.toFixed(2)}` : `-$${Math.abs(s.pnl).toFixed(2)}`)
+            : 'X'),
+  };
+}
+
+function ChartPanel({
+  title,
+  label,
+  candles,
+  signals,
+  markerColor,
+  color,
+  shadowSignals,
+  shadowMarkerColor,
+}: PanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -124,30 +191,18 @@ function ChartPanel({ title, label, candles, signals, color }: PanelProps) {
     [candles],
   );
 
-  // Convert signals to markers
-  const markers = useMemo<SeriesMarker<UTCTimestamp>[]>(
-    () =>
-      signals
-        .map<SeriesMarker<UTCTimestamp> | null>((s) => {
-          const buy = (s.side === 'long' && s.type === 'entry')
-                    || (s.side === 'short' && s.type === 'exit');
-          return {
-            time: Math.floor(s.ts / 1000) as UTCTimestamp,
-            position: buy ? 'belowBar' : 'aboveBar',
-            color: buy ? '#26a69a' : '#ef5350',
-            shape: buy ? 'arrowUp' : 'arrowDown',
-            text:
-              s.type === 'entry'
-                ? (s.side === 'long' ? 'L' : 'S')
-                : (s.pnl !== undefined
-                    ? (s.pnl >= 0 ? `+$${s.pnl.toFixed(2)}` : `-$${Math.abs(s.pnl).toFixed(2)}`)
-                    : 'X'),
-          };
-        })
-        .filter((m): m is SeriesMarker<UTCTimestamp> => m !== null)
-        .sort((a, b) => (a.time as number) - (b.time as number)),
-    [signals],
-  );
+  // Convert signals to markers — primary track + optional shadow track
+  // overlaid. Both arrays merge into a single sorted markers list because
+  // lightweight-charts.createSeriesMarkers takes one ordered array per call.
+  const markers = useMemo<SeriesMarker<UTCTimestamp>[]>(() => {
+    const primary = signals.map((s) => signalToMarker(s, markerColor));
+    const secondary = (shadowSignals ?? []).map((s) =>
+      signalToMarker(s, shadowMarkerColor ?? '#f39f3a'),
+    );
+    return [...primary, ...secondary].sort(
+      (a, b) => (a.time as number) - (b.time as number),
+    );
+  }, [signals, shadowSignals, markerColor, shadowMarkerColor]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -197,6 +252,7 @@ function ChartPanel({ title, label, candles, signals, color }: PanelProps) {
     chartRef.current?.timeScale().fitContent();
   }, [chartCandles, markers]);
 
+  const totalMarkers = signals.length + (shadowSignals?.length ?? 0);
   return (
     <section style={panelStyle} data-testid={`panel-${title.toLowerCase()}`}>
       <header style={panelHeader}>
@@ -204,6 +260,11 @@ function ChartPanel({ title, label, candles, signals, color }: PanelProps) {
           <strong style={{ color }}>{title}</strong>
           <span style={{ color: 'var(--color-text-dim)', fontSize: 11 }}>
             {label} · {signals.length} markers
+            {shadowSignals && shadowSignals.length > 0 && (
+              <span data-testid="shadow-marker-count">
+                {' '}+ {shadowSignals.length} shadow
+              </span>
+            )}
           </span>
         </div>
       </header>
@@ -213,7 +274,7 @@ function ChartPanel({ title, label, candles, signals, color }: PanelProps) {
           no candles in cache for this window
         </div>
       )}
-      {chartCandles.length > 0 && signals.length === 0 && (
+      {chartCandles.length > 0 && totalMarkers === 0 && (
         <div style={{ fontSize: 11, color: 'var(--color-text-dim)',
                        textAlign: 'center', marginTop: 4 }}>
           no signals in this window
