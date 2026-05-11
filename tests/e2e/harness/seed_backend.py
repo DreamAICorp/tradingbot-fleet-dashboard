@@ -98,8 +98,66 @@ def seed_paired_bananausdt(db_path: Path) -> None:
     con.close()
 
 
+def seed_stage1_passing(db_path: Path) -> None:
+    """A champion in a healthy state: 35 trades clustered in the last 24h
+    (so they fall inside the compare endpoint's rolling window), 60% WR,
+    no liqs, positive PnL. Drives the Stage-1 gate pass path of the
+    trajectory canary so the e2e suite covers the green-state assertion
+    code path. Symbol matches the fixture's CHAMPIONS_JSON entry
+    (BANANAUSDT) so /compare's tf_variant lookup finds it.
+    """
+    from live.paper_store import open_db, upsert_strategy, log_trade
+    now_ms = int(time.time() * 1000)
+    con = open_db(db_path)
+    sid = "multi_tf_rsi_confluence_bananausdt_x50"
+    upsert_strategy(
+        con, strategy_id=sid, name=sid, family="multi",
+        symbol="BANANAUSDT", leverage=50, initial_equity=100.0,
+        params={"leverage": 50}, created_ts=0,
+        timeframe_minutes=15, expected_setups_per_day=8.0,
+        expected_trades_per_day=4.97, backtest_source="realistic_sweep",
+    )
+    # 35 trades clustered in last 23h so all fall inside /compare's 24h
+    # rolling window (avoid edge-of-window flakiness). 21 wins (60%), 0
+    # liquidations, net +$5.25 — clears Stage-1 every gate.
+    seed_pnls = [
+        *([0.45] * 21),  # 21 wins  → +$9.45
+        *([-0.30] * 14), # 14 losses → -$4.20
+    ]
+    for i, pnl in enumerate(seed_pnls):
+        ts_open = now_ms - (i + 1) * (23 * 3_600_000 // len(seed_pnls))
+        log_trade(
+            con, strategy_id=sid, symbol="BANANAUSDT", side="long",
+            entry_price=1.0, exit_price=1.0 + pnl / 100.0,
+            size_usd=10.0, leverage=50, pnl=pnl, fees=0.01,
+            exit_reason="tp1_partial" if pnl > 0 else "sl",
+            ts_open=ts_open, ts_close=ts_open + 60_000,
+        )
+    con.close()
+
+
+def seed_empty_fleet(db_path: Path) -> None:
+    """Just one registered canonical with no trades/signal-checks. Used
+    by the canary's silence-detection path to assert behaviour when the
+    fleet is just spun up."""
+    from live.paper_store import open_db, upsert_strategy
+    con = open_db(db_path)
+    upsert_strategy(
+        con, strategy_id="multi_tf_rsi_confluence_bananausdt_x50",
+        name="multi_tf_rsi_confluence_bananausdt_x50",
+        family="multi", symbol="BANANAUSDT",
+        leverage=50, initial_equity=100.0,
+        params={"leverage": 50}, created_ts=0,
+        timeframe_minutes=15, expected_setups_per_day=8.0,
+        expected_trades_per_day=4.97, backtest_source="realistic_sweep",
+    )
+    con.close()
+
+
 SEED_PRESETS = {
     "paired_bananausdt": seed_paired_bananausdt,
+    "stage1_passing":    seed_stage1_passing,
+    "empty_fleet":       seed_empty_fleet,
 }
 
 
