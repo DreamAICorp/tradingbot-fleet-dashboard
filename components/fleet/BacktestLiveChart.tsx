@@ -104,14 +104,18 @@ export default function BacktestLiveChart({ championId }: Props) {
             title="Live"
             label={
               data.shadow_signals
-                ? `green = filter-on · orange = filter-off shadow (${data.pair_variant_id})`
-                : 'signals from paper_trades'
+                ? `green = filter-on · orange = filter-off shadow (${data.pair_variant_id}) · red ✕ = rejected by filter`
+                : (data.rejected_signals.length > 0
+                    ? 'green = filter-on · red ✕ = rejected by filter'
+                    : 'signals from paper_trades')
             }
             candles={data.candles}
             signals={data.live_signals}
             markerColor={LIVE_MARKER_COLOR}
             shadowSignals={data.shadow_signals ?? undefined}
             shadowMarkerColor={SHADOW_MARKER_COLOR}
+            rejectedSignals={data.rejected_signals}
+            rejectedMarkerColor={REJECTED_MARKER_COLOR}
             color={LIVE_MARKER_COLOR}
           />
         </>
@@ -120,14 +124,16 @@ export default function BacktestLiveChart({ championId }: Props) {
   );
 }
 
-// Marker palette — 3-color scheme so the operator visually attributes each
-// triangle to its source. Backtest = cyan, Live (filter on) = green,
-// Shadow (no filter) = orange. Picked from the GitHub-dark palette the
-// rest of the dashboard already uses (see styles/globals.css). Exported so
-// the unit test can assert paint paths without re-declaring the palette.
+// Marker palette — 4-color scheme so the operator visually attributes each
+// glyph to its source. Backtest = cyan, Live (filter on) = green,
+// Shadow (no filter) = orange, Rejected (filter killed it) = red.
+// Picked from the GitHub-dark palette the rest of the dashboard already
+// uses (see styles/globals.css). Exported so unit tests can assert paint
+// paths without re-declaring the palette.
 export const BACKTEST_MARKER_COLOR = '#79c0ff';   // cyan
 export const LIVE_MARKER_COLOR     = '#3fb950';   // green
 export const SHADOW_MARKER_COLOR   = '#f39f3a';   // orange
+export const REJECTED_MARKER_COLOR = '#f85149';   // red
 
 interface PanelProps {
   title: string;
@@ -142,12 +148,33 @@ interface PanelProps {
    *  same chart with its own color (orange for the no-filter shadow). */
   shadowSignals?: ChartSignal[];
   shadowMarkerColor?: string;
+  /** Sprint S1 follow-up — setups the runner refused to act on (regime
+   *  rejects / stale / dedup). Rendered as red ✕ on the Live panel so
+   *  the operator visually identifies where the filter mord. */
+  rejectedSignals?: ChartSignal[];
+  rejectedMarkerColor?: string;
 }
 
 export function signalToMarker(
   s: ChartSignal,
   color: string,
 ): SeriesMarker<UTCTimestamp> {
+  // Sprint S1 follow-up — 'rejected' markers get their own shape (✕) and
+  // sit ABOVE the bar regardless of direction. The runner doesn't always
+  // know the side, and even when it does, the "rejected" semantic isn't
+  // long/short — it's "agent saw setup, gate blocked it". One shape, one
+  // color (red), so the operator scans instantly.
+  if (s.type === 'rejected') {
+    return {
+      time: Math.floor(s.ts / 1000) as UTCTimestamp,
+      position: 'aboveBar',
+      color,
+      shape: 'circle',
+      text: s.exit_reason
+        ? (s.side ? `${s.side[0].toUpperCase()}✕` : '✕')
+        : '✕',
+    };
+  }
   const buy = (s.side === 'long' && s.type === 'entry')
             || (s.side === 'short' && s.type === 'exit');
   return {
@@ -173,6 +200,8 @@ function ChartPanel({
   color,
   shadowSignals,
   shadowMarkerColor,
+  rejectedSignals,
+  rejectedMarkerColor,
 }: PanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -192,17 +221,21 @@ function ChartPanel({
   );
 
   // Convert signals to markers — primary track + optional shadow track
-  // overlaid. Both arrays merge into a single sorted markers list because
-  // lightweight-charts.createSeriesMarkers takes one ordered array per call.
+  // overlaid + optional rejected track. All arrays merge into a single
+  // sorted markers list because lightweight-charts.createSeriesMarkers
+  // takes one ordered array per call.
   const markers = useMemo<SeriesMarker<UTCTimestamp>[]>(() => {
     const primary = signals.map((s) => signalToMarker(s, markerColor));
     const secondary = (shadowSignals ?? []).map((s) =>
       signalToMarker(s, shadowMarkerColor ?? '#f39f3a'),
     );
-    return [...primary, ...secondary].sort(
+    const rejected = (rejectedSignals ?? []).map((s) =>
+      signalToMarker(s, rejectedMarkerColor ?? '#f85149'),
+    );
+    return [...primary, ...secondary, ...rejected].sort(
       (a, b) => (a.time as number) - (b.time as number),
     );
-  }, [signals, shadowSignals, markerColor, shadowMarkerColor]);
+  }, [signals, shadowSignals, rejectedSignals, markerColor, shadowMarkerColor, rejectedMarkerColor]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -252,7 +285,9 @@ function ChartPanel({
     chartRef.current?.timeScale().fitContent();
   }, [chartCandles, markers]);
 
-  const totalMarkers = signals.length + (shadowSignals?.length ?? 0);
+  const totalMarkers = signals.length
+    + (shadowSignals?.length ?? 0)
+    + (rejectedSignals?.length ?? 0);
   return (
     <section style={panelStyle} data-testid={`panel-${title.toLowerCase()}`}>
       <header style={panelHeader}>
@@ -263,6 +298,14 @@ function ChartPanel({
             {shadowSignals && shadowSignals.length > 0 && (
               <span data-testid="shadow-marker-count">
                 {' '}+ {shadowSignals.length} shadow
+              </span>
+            )}
+            {rejectedSignals && rejectedSignals.length > 0 && (
+              <span
+                data-testid="rejected-marker-count"
+                style={{ color: 'var(--color-neg)' }}
+              >
+                {' '}+ {rejectedSignals.length} rejected
               </span>
             )}
           </span>
