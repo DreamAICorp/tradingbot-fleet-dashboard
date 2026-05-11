@@ -120,7 +120,9 @@ export default function PairView({ rows, onSelect }: Props) {
                   data-testid={`pair-delta-${p.symbol}`}
                 >
                   {p.canonical && p.shadow
-                    ? (delta >= 0 ? '+' : '') + '$' + delta.toFixed(2)
+                    ? (delta >= 0
+                        ? `+$${delta.toFixed(2)}`
+                        : `-$${Math.abs(delta).toFixed(2)}`)
                     : '—'}
                 </td>
               </tr>
