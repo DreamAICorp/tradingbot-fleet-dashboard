@@ -37,19 +37,29 @@ export interface ChampionRow {
   trades_ratio: number | null;     // live actual / contract expected
   liq_distance_pct: number | null; // null when no open position
   last_tick_ts: number | null;
+  /** S1 — sibling strategy_id ("<id>_nofilter") when paired shadow exists. */
+  pair_variant_id: string | null;
 }
 
 export interface DriftCompare {
   champion_id: string;
+  /** S1 — _nofilter sibling strategy_id when paired shadow exists. */
+  pair_variant_id: string | null;
   metrics: {
     name: string;
     backtest: number | null;
     simulation: number | null;
     live: number | null;
+    /** S1 — same metric computed against the _nofilter sibling. null when no pair. */
+    live_no_filter: number | null;
     delta_pct: number | null;       // (live - backtest) / backtest
+    /** S1 — (live_no_filter - backtest) / backtest, mirrors delta_pct shape. */
+    delta_pct_no_filter: number | null;
     unit: 'pct' | 'count' | 'usd' | 'ratio';
   }[];
   sample_size: number;              // n_trades live — drives confidence intervals
+  /** S1 — n_trades on the _nofilter sibling within the same 24h window. */
+  sample_size_no_filter: number | null;
 }
 
 export interface DecisionRow {
@@ -90,12 +100,16 @@ export interface ChartSignal {
 
 export interface ChartData {
   champion_id: string;
+  /** S1 — _nofilter sibling strategy_id when paired shadow exists. */
+  pair_variant_id: string | null;
   symbol: string;
   interval_minutes: number;
   days: number;
   candles: Candle[];
   live_signals: ChartSignal[];
   backtest_signals: ChartSignal[];
+  /** S1 — entry+exit markers from the _nofilter sibling; null when no pair. */
+  shadow_signals: ChartSignal[] | null;
 }
 
 export interface EquityCurvePoint {

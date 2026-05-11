@@ -89,6 +89,18 @@ function CompareTab({ id }: { id: string }) {
           </span>
         )}
       </div>
+      {data.pair_variant_id && (
+        <div
+          className="muted"
+          style={{ marginTop: 4, marginBottom: 6, fontSize: 12 }}
+          data-testid="compare-pair-badge"
+        >
+          paired with <strong>{data.pair_variant_id}</strong>
+          {data.sample_size_no_filter !== null && (
+            <> — sample size (no filter): <strong>{data.sample_size_no_filter}</strong></>
+          )}
+        </div>
+      )}
       <table>
         <thead>
           <tr>
@@ -97,6 +109,12 @@ function CompareTab({ id }: { id: string }) {
             <th>Simulation</th>
             <th>Live</th>
             <th>Δ (live vs backtest)</th>
+            {data.pair_variant_id && (
+              <>
+                <th>Live (no filter)</th>
+                <th>Δ (no-filter vs backtest)</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -109,6 +127,12 @@ function CompareTab({ id }: { id: string }) {
               live={m.live}
               deltaPct={m.delta_pct}
               unit={m.unit}
+              {...(data.pair_variant_id
+                ? {
+                    liveNoFilter: m.live_no_filter,
+                    deltaPctNoFilter: m.delta_pct_no_filter,
+                  }
+                : {})}
             />
           ))}
         </tbody>

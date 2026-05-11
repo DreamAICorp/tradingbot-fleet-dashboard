@@ -7,6 +7,10 @@
  * fee-bound, low WR, high liq).
  *
  * Phase A: backtest+live only (simulation is "—" until Phase B replay ships).
+ * Sprint S1: when liveNoFilter is provided, a 4th "Live (no filter)" data
+ * column + its own Δ cell render — apples-to-apples view against the
+ * _nofilter shadow runner. Both Δs are colored independently so the
+ * operator sees which filter setting bleeds more for each metric.
  */
 
 import { driftBucket, fmtPct, fmtCount, fmtUsd } from '@/lib/format';
@@ -20,9 +24,13 @@ interface Props {
   live: number | null;
   deltaPct: number | null;
   unit: Unit;
+  /** S1 — same metric value computed on the _nofilter sibling runner. */
+  liveNoFilter?: number | null;
+  /** S1 — (liveNoFilter - backtest) / backtest, mirrors deltaPct. */
+  deltaPctNoFilter?: number | null;
 }
 
-function formatVal(v: number | null, unit: Unit): string {
+function formatVal(v: number | null | undefined, unit: Unit): string {
   if (v === null || v === undefined) return '—';
   switch (unit) {
     case 'pct':   return fmtPct(v, 2);
@@ -38,29 +46,69 @@ const colorByBucket = {
   red:    'var(--color-neg)',
 } as const;
 
-export default function DriftStatRow({ name, backtest, simulation, live, deltaPct, unit }: Props) {
-  const bucket = deltaPct !== null ? driftBucket(deltaPct) : null;
-  const deltaColor = bucket ? colorByBucket[bucket] : 'var(--color-text-mute)';
-  const deltaText  =
-    deltaPct === null ? '—'
-    : (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(0) + '%';
+function deltaCell(deltaPct: number | null | undefined, testId: string) {
+  const bucket = deltaPct !== null && deltaPct !== undefined ? driftBucket(deltaPct) : null;
+  const color  = bucket ? colorByBucket[bucket] : 'var(--color-text-mute)';
+  const text   =
+    deltaPct === null || deltaPct === undefined
+      ? '—'
+      : (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(0) + '%';
+  return { bucket, color, text, testId };
+}
+
+export default function DriftStatRow({
+  name,
+  backtest,
+  simulation,
+  live,
+  deltaPct,
+  unit,
+  liveNoFilter,
+  deltaPctNoFilter,
+}: Props) {
+  const left  = deltaCell(deltaPct, `drift-delta-${name}`);
+  // Render the no-filter columns only when the caller actually supplies a
+  // sibling value (paired mode). undefined skips the 4th col, null shows it
+  // as "—" so the column stays aligned across rows when SOME have data.
+  const paired = liveNoFilter !== undefined || deltaPctNoFilter !== undefined;
+  const right = paired
+    ? deltaCell(deltaPctNoFilter, `drift-delta-nofilter-${name}`)
+    : null;
 
   return (
-    <tr data-testid={`drift-row-${name}`} data-bucket={bucket ?? 'none'}>
+    <tr
+      data-testid={`drift-row-${name}`}
+      data-bucket={left.bucket ?? 'none'}
+      data-bucket-nofilter={right?.bucket ?? 'none'}
+    >
       <td style={{ color: 'var(--color-text-dim)' }}>{name}</td>
       <td className="numeric">{formatVal(backtest, unit)}</td>
       <td className="numeric">{formatVal(simulation, unit)}</td>
       <td className="numeric">{formatVal(live, unit)}</td>
       <td
         className="numeric"
-        style={{
-          color: deltaColor,
-          fontWeight: bucket === 'red' ? 600 : 400,
-        }}
-        data-testid={`drift-delta-${name}`}
+        style={{ color: left.color, fontWeight: left.bucket === 'red' ? 600 : 400 }}
+        data-testid={left.testId}
       >
-        {deltaText}
+        {left.text}
       </td>
+      {paired && (
+        <>
+          <td
+            className="numeric"
+            data-testid={`drift-live-nofilter-${name}`}
+          >
+            {formatVal(liveNoFilter, unit)}
+          </td>
+          <td
+            className="numeric"
+            style={{ color: right!.color, fontWeight: right!.bucket === 'red' ? 600 : 400 }}
+            data-testid={right!.testId}
+          >
+            {right!.text}
+          </td>
+        </>
+      )}
     </tr>
   );
 }
