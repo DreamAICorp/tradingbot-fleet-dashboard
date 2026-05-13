@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           cd "$DASHBOARD_DIR"
           if [ ! -d .git ]; then
-            git clone https://github.com/dream-ai-corp/tradingbot-fleet-dashboard.git .
+            git clone https://github.com/DreamAICorp/tradingbot-fleet-dashboard.git .
           fi
           git fetch --depth=1 origin main
           git reset --hard origin/main
