@@ -153,11 +153,21 @@ def _check_branch_protection_local() -> tuple[bool, str]:
         else:
             actual = val
         if actual != expected:
-            errors.append(f"branch_protection.{key}.{sub}: expected {expected}, got {actual!r}")
+            errors.append(
+                f"branch_protection.{key}.{sub}: expected {expected}, got {actual!r}",
+            )
     # Check required_status_checks contains the canonical names
     rsc = bp.get("required_status_checks") or {}
     contexts = set(rsc.get("contexts") or [])
-    required_contexts = {"lint", "typecheck", "unit", "integration", "e2e", "security", "compliance"}
+    required_contexts = {
+        "lint",
+        "typecheck",
+        "unit",
+        "integration",
+        "e2e",
+        "security",
+        "compliance",
+    }
     missing = required_contexts - contexts
     if missing:
         errors.append(f"required_status_checks missing: {sorted(missing)}")
@@ -180,7 +190,9 @@ def main() -> int:
         print(f"::error::compliance.py: {root} is not a git repo", file=sys.stderr)
         return 2
 
-    print(f"compliance.py — checking {REPO_ORG}/{REPO_NAME} against {CONTROL_PLANE_REPO}")
+    print(
+        f"compliance.py — checking {REPO_ORG}/{REPO_NAME} against {CONTROL_PLANE_REPO}",
+    )
     print(f"repo root: {root}")
     print()
 
